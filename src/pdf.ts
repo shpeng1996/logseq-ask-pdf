@@ -4,10 +4,116 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
 
 
-export async function getPdfAndEdnByPdfPath(pdfPath: string) {
-    const assetPath = await logseq.Assets.makeUrl(pdfPath);
-    const filePath = assetPath.replace("assets", "file");
-    const ednPath = filePath.replace(".pdf", ".edn");
+function normalizePathSeparators(path: string) {
+    return path.replace(/\\/g, "/");
+}
+
+function stripLeadingSlash(path: string) {
+    return path.replace(/^\/+/, "");
+}
+
+function normalizeRelativeGraphPath(path: string) {
+    const normalizedPath = normalizePathSeparators(path);
+    const segments = normalizedPath.split("/");
+    const resolvedSegments: string[] = [];
+
+    for (const segment of segments) {
+        if (!segment || segment === ".") continue;
+        if (segment === "..") {
+            // Treat leading ".." as graph-root relative so "../assets/..." still works.
+            if (resolvedSegments.length > 0) resolvedSegments.pop();
+            continue;
+        }
+        resolvedSegments.push(segment);
+    }
+
+    return resolvedSegments.join("/");
+}
+
+function makeFileUrlFromAssetUrl(assetUrl: string) {
+    if (!assetUrl.startsWith("assets://")) {
+        return assetUrl.replace("assets", "file");
+    }
+
+    const assetFilePath = decodeURIComponent(assetUrl.slice("assets://".length));
+    const normalizedAssetFilePath = normalizePathSeparators(assetFilePath);
+    const pathname = normalizedAssetFilePath.startsWith("/")
+        ? normalizedAssetFilePath
+        : `/${normalizedAssetFilePath}`;
+
+    return encodeURI(`file://${pathname}`);
+}
+
+async function resolveGraphRelativePdfPath(pdfPath: string) {
+    const trimmedPath = pdfPath.trim();
+    const normalizedPath = normalizePathSeparators(trimmedPath);
+    const currentGraph = await logseq.App.getCurrentGraph();
+    if (!currentGraph) return null;
+    const graphPath = normalizePathSeparators(currentGraph.path);
+    const normalizedGraphPath = graphPath.endsWith("/") ? graphPath : `${graphPath}/`;
+
+    if (/^[a-zA-Z]:\//.test(normalizedPath)) {
+        if (!normalizedPath.startsWith(normalizedGraphPath)) return null;
+        return normalizedPath.slice(normalizedGraphPath.length);
+    }
+
+    if (normalizedPath.startsWith("file:///")) {
+        const decodedPath = decodeURIComponent(normalizedPath.slice("file:///".length));
+        const normalizedDecodedPath = normalizePathSeparators(decodedPath);
+        if (!normalizedDecodedPath.startsWith(normalizedGraphPath)) return null;
+        return normalizedDecodedPath.slice(normalizedGraphPath.length);
+    }
+
+    return normalizeRelativeGraphPath(stripLeadingSlash(normalizedPath));
+}
+
+export type PdfDebugInfo = {
+    inputPath: string;
+    graphRelativePdfPath: string | null;
+    assetPath: string | null;
+    filePath: string | null;
+    ednPath: string | null;
+    error: string | null;
+};
+
+export type PdfLookupResult =
+    | { ok: true; pdf: Blob; edn: { "highlights": Highlight[] }; debug: PdfDebugInfo }
+    | { ok: false; debug: PdfDebugInfo };
+
+export function formatPdfDebugInfo(debug: PdfDebugInfo) {
+    return [
+        `inputPath: ${debug.inputPath}`,
+        `graphRelativePdfPath: ${debug.graphRelativePdfPath ?? "null"}`,
+        `assetPath: ${debug.assetPath ?? "null"}`,
+        `filePath: ${debug.filePath ?? "null"}`,
+        `ednPath: ${debug.ednPath ?? "null"}`,
+        `error: ${debug.error ?? "null"}`,
+    ].join("\n");
+}
+
+export async function getPdfAndEdnByPdfPath(pdfPath: string): Promise<PdfLookupResult> {
+    const debug: PdfDebugInfo = {
+        inputPath: pdfPath,
+        graphRelativePdfPath: null,
+        assetPath: null,
+        filePath: null,
+        ednPath: null,
+        error: null,
+    };
+
+    const graphRelativePdfPath = await resolveGraphRelativePdfPath(pdfPath);
+    debug.graphRelativePdfPath = graphRelativePdfPath;
+    if (!graphRelativePdfPath) {
+        debug.error = "Path is outside the current graph or resolves above graph root.";
+        return { ok: false, debug };
+    }
+
+    const assetPath = await logseq.Assets.makeUrl(graphRelativePdfPath);
+    debug.assetPath = assetPath;
+    const filePath = makeFileUrlFromAssetUrl(assetPath);
+    const ednPath = filePath.replace(/\.pdf$/i, ".edn");
+    debug.filePath = filePath;
+    debug.ednPath = ednPath;
 
     let fileResponse;
     let ednResponse;
@@ -15,8 +121,14 @@ export async function getPdfAndEdnByPdfPath(pdfPath: string) {
     try {
         fileResponse = await fetch(filePath);
         ednResponse = await fetch(ednPath);
-    } catch {
-        return null;
+    } catch (error) {
+        debug.error = error instanceof Error ? `Fetch failed: ${error.message}` : "Fetch failed.";
+        return { ok: false, debug };
+    }
+
+    if (!fileResponse.ok || !ednResponse.ok) {
+        debug.error = `Fetch returned non-OK status. pdf=${fileResponse.status}, edn=${ednResponse.status}`;
+        return { ok: false, debug };
     }
 
     const fileArrayBuffer = await fileResponse.arrayBuffer();
@@ -25,9 +137,9 @@ export async function getPdfAndEdnByPdfPath(pdfPath: string) {
     const edn = parseEDNString(
         await ednResponse.text(),
         { mapAs: "object", keywordAs: "string" },
-    ) as { "highlights": [] };
+    ) as { "highlights": Highlight[] };
 
-    return { pdf, edn };
+    return { ok: true, pdf, edn, debug };
 }
 
 export function findUuidOfCurrentLine(line: string) {

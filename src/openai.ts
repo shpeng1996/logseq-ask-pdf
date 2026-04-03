@@ -8,6 +8,8 @@ import { captureImageFromPDF } from "./pdf";
 import { HumanMessage } from "@langchain/core/messages";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { createRetrievalChain } from "langchain/chains/retrieval";
+import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
 
 // 캐시를 위한 인터페이스 정의
@@ -17,8 +19,21 @@ interface VectorStoreCache {
     };
 }
 
-// 전역 캐시 객체 선언
+// Global cache object declaration
 let vectorStoreCache: VectorStoreCache = {};
+
+async function showVectorStoreDebug(message: string, level: "success" | "warning" | "error" = "warning") {
+    console.log(`[storePdfOnVectorStore] ${message}`);
+    await logseq.UI.showMsg(`[storePdfOnVectorStore] ${message}`, level);
+}
+
+function splitIntoBatches<T>(items: T[], batchSize: number) {
+    const batches: T[][] = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+        batches.push(items.slice(i, i + batchSize));
+    }
+    return batches;
+}
 
 export function readOpenAiAPIKey(): string | null {
     return (logseq.settings as any)["openaiApiKey"] ?? logseq.settings?.["openaiApiKey"] ?? null;
@@ -41,37 +56,54 @@ export function readLLMModel(): string {
 }
 
 export async function storePdfOnVectorStore(pdf: Blob, openaiApiKey: string, embeddingModelHost: string | null, embeddingModel: string, pdfPath: string) {
-    // 캐시에서 벡터 스토어 확인
+    // Check vector store from cache
     if (vectorStoreCache[pdfPath] && vectorStoreCache[pdfPath][embeddingModel]) {
         console.log("Using cached vector store");
         return vectorStoreCache[pdfPath][embeddingModel];
     }
 
-    console.log("Creating new vector store");
-    const embeddings = new OpenAIEmbeddings({
-        openAIApiKey: openaiApiKey,
-        model: embeddingModel,
-        configuration: embeddingModelHost ? {
-            baseURL: embeddingModelHost,
-        } : undefined
-    });
-    const loader = new PDFLoader(pdf, {
-        pdfjs: () => pdfjs as any,
-    });
-    const docs = await loader.load()
+    try {
+        console.log("Creating new vector store"); 
+        const embeddings = new OpenAIEmbeddings({
+            openAIApiKey: openaiApiKey,
+            model: embeddingModel,
+            configuration: embeddingModelHost ? {
+                baseURL: embeddingModelHost,
+            } : undefined
+        });
+        const loader = new PDFLoader(pdf, {
+            pdfjs: () => pdfjs as any,
+        });
+        const docs = await loader.load();
+        const splitter = new RecursiveCharacterTextSplitter({
+            chunkSize: 500,
+            chunkOverlap: 200,
+        });
+        const splitDocs = await splitter.splitDocuments(docs);
+        await showVectorStoreDebug(`documents split: docs=${splitDocs.length}`, "success");
 
-    const vectorStore = await MemoryVectorStore.fromDocuments(
-        docs,
-        embeddings,
-    );
+        await showVectorStoreDebug("building in-memory vector store");
+        const vectorStore = new MemoryVectorStore(embeddings);
+        const batches = splitIntoBatches(splitDocs, 10);
 
-    // 캐시에 벡터 스토어 저장
-    if (!vectorStoreCache[pdfPath]) {
-        vectorStoreCache[pdfPath] = {};
+        for (let i = 0; i < batches.length; i++) {
+            const batch = batches[i];
+            await showVectorStoreDebug(`embedding batch ${i + 1}/${batches.length}: docs=${batch.length}`);
+            await vectorStore.addDocuments(batch);
+            await showVectorStoreDebug(`embedded batch ${i + 1}/${batches.length}`, "success");
+        }
+
+        if (!vectorStoreCache[pdfPath]) {
+            vectorStoreCache[pdfPath] = {};
+        }
+        vectorStoreCache[pdfPath][embeddingModel] = vectorStore;
+
+        return vectorStore;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await showVectorStoreDebug(`failed: ${message}`, "error");
+        throw error;
     }
-    vectorStoreCache[pdfPath][embeddingModel] = vectorStore;
-
-    return vectorStore;
 }
 
 export async function invoke(highlight: Highlight, pdf: Blob, openaiApiKey: string, llmModelHost: string | null, llmModel: string, vectorStore: MemoryVectorStore) {

@@ -3,7 +3,7 @@ import settingUI from "./settings";
 import { Buffer } from 'buffer'
 import { invoke, readOpenAiAPIKey, readEmbeddingModelHost, readEmbeddingModel, readLLMModelHost, readLLMModel, storePdfOnVectorStore } from "./openai";
 import { findPageProperty } from "./page";
-import { findHighlightFromEdnByUuid, findUuidOfCurrentLine, getPdfAndEdnByPdfPath } from "./pdf";
+import { findHighlightFromEdnByUuid, findUuidOfCurrentLine, formatPdfDebugInfo, getPdfAndEdnByPdfPath } from "./pdf";
 
 globalThis.Buffer = Buffer
 
@@ -41,8 +41,8 @@ async function main() {
             }
 
             const pdfInfo = await getPdfAndEdnByPdfPath(pdfPath);
-            if (!pdfInfo) {
-                await logseq.UI.showMsg(`Please check whether the pdfPath is valid.`, "warning");
+            if (!pdfInfo.ok) {
+                await logseq.UI.showMsg(`Please check whether the pdfPath is valid.\n${formatPdfDebugInfo(pdfInfo.debug)}`, "warning");
                 return;
             }
 
