@@ -24,7 +24,7 @@ let vectorStoreCache: VectorStoreCache = {};
 
 async function showVectorStoreDebug(message: string, level: "success" | "warning" | "error" = "warning") {
     console.log(`[storePdfOnVectorStore] ${message}`);
-    await logseq.UI.showMsg(`[storePdfOnVectorStore] ${message}`, level);
+    // await logseq.UI.showMsg(`[storePdfOnVectorStore] ${message}`, level);
 }
 
 function splitIntoBatches<T>(items: T[], batchSize: number) {

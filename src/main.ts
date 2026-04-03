@@ -77,18 +77,44 @@ async function main() {
 
             if (loadingBlock) await logseq.Editor.removeBlock(loadingBlock.uuid);
             if (chatResponse) {
-                const chatResponseLine = chatResponse.answer.trim().split("\n");
+                let answerText = chatResponse.answer.trim();
 
-                // remove first ``` and last ```
-                if (chatResponseLine[0].trim().startsWith("```")) chatResponseLine.shift();
-                if (chatResponseLine[chatResponseLine.length - 1].trim().startsWith("```")) chatResponseLine.pop();
+                // extract thinking content from <think>...</think> tags (for thinking models)
+                let thinkingContent = "";
+                const thinkMatch = answerText.match(/<think>([\s\S]*?)<\/think>/);
+                if (thinkMatch) {
+                    thinkingContent = thinkMatch[1].trim();
+                    answerText = answerText.replace(/<think>[\s\S]*?<\/think>/, "").trim();
+                }
+
+                // remove wrapping ``` code fences if present
+                const lines = answerText.split("\n");
+                if (lines[0].trim().startsWith("```")) lines.shift();
+                if (lines.length > 0 && lines[lines.length - 1].trim().startsWith("```")) lines.pop();
+                answerText = lines.join("\n").trim();
 
                 ///////////////////////////////
                 // write the answer under the current block
                 ///////////////////////////////
-                for (const line of chatResponseLine) {
-                    if (line.trim() === "") continue;
-                    await logseq.Editor.insertBlock(currentBlock.uuid, line);
+                const askPdfBlock = await logseq.Editor.insertBlock(currentBlock.uuid, "*Ask PDF Response*");
+                if (askPdfBlock) {
+                    if (thinkingContent) {
+                        await logseq.Editor.insertBlock(askPdfBlock.uuid, "#+BEGIN_NOTE\n" + thinkingContent + "\n#+END_NOTE");
+                    }
+                    // await logseq.Editor.insertBlock(askPdfBlock.uuid, answerText);
+                    let lastParentBlock = askPdfBlock;
+                    for (const line of lines) {
+                        if (line.trim() === "") continue;
+                        const listMatch = line.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/);
+                        if (listMatch) {
+                            // list item → insert as child of the last non-list parent block
+                            await logseq.Editor.insertBlock(lastParentBlock.uuid, listMatch[1]);
+                        } else {
+                            // normal text → insert as child of askPdfBlock, track as new parent
+                            const inserted = await logseq.Editor.insertBlock(askPdfBlock.uuid, line);
+                            if (inserted) lastParentBlock = inserted;
+                        }
+                    }
                 }
             } else {
                 await logseq.UI.showMsg(`Please retry`, "error");

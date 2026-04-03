@@ -158,13 +158,13 @@ export function findHighlightFromEdnByUuid(uuid: string, edn: { "highlights": Hi
     return null;
 }
 
-// 이미지 크기를 조정하는 함수
+// Function to resize the image
 function resizeCanvas(canvas: HTMLCanvasElement, maxArea: number): HTMLCanvasElement {
     let width = canvas.width;
     let height = canvas.height;
     const aspectRatio = width / height;
 
-    // 이미지 면적이 maxArea를 초과하는 경우 크기 조정
+    // Resize if the image area exceeds maxArea
     if (width * height > maxArea) {
         width = Math.sqrt(maxArea * aspectRatio);
         height = width / aspectRatio;
@@ -181,7 +181,7 @@ function resizeCanvas(canvas: HTMLCanvasElement, maxArea: number): HTMLCanvasEle
     return resizedCanvas;
 }
 
-// Canvas를 base64로 변환하는 함수
+// Convert canvas to base64
 function canvasToBase64(canvas: HTMLCanvasElement): string {
     const resizedCanvas = resizeCanvas(canvas, 250000);
     return resizedCanvas.toDataURL('image/jpeg');
@@ -191,11 +191,11 @@ export async function captureImageFromPDF(pdfBlob: Blob, position: Highlight['po
     const pdf = await pdfjs.getDocument(await pdfBlob.arrayBuffer()).promise;
     const page = await pdf.getPage(position.page);
 
-    // 캡처 시점의 PDF 크기
+    // Capture point PDF size
     const captureWidth = position.bounding.width;
     const captureHeight = position.bounding.height;
 
-    // 렌더링 스케일 (고해상도를 위해)
+    // Rendering scale (for high resolution)
     const renderScale = 2;
 
     const viewport = page.getViewport({ scale: renderScale });
@@ -210,15 +210,15 @@ export async function captureImageFromPDF(pdfBlob: Blob, position: Highlight['po
 
     const { x1, y1, x2, y2 } = position.bounding;
 
-    // 상대 좌표 계산
+    // Calculate relative coordinates
     const relativeX1 = x1 / captureWidth;
     const relativeY1 = y1 / captureHeight;
     const relativeX2 = x2 / captureWidth;
     const relativeY2 = y2 / captureHeight;
 
-    // 렌더링된 캔버스에서의 실제 좌표 계산
+    // Calculate actual coordinates in rendered canvas
     const startX = relativeX1 * viewport.width;
-    const startY = relativeY1 * viewport.height; // Y축 좌표 수정
+    const startY = relativeY1 * viewport.height; // Modify Y axis coordinates
     const width = (relativeX2 - relativeX1) * viewport.width;
     const height = (relativeY2 - relativeY1) * viewport.height;
 
@@ -228,7 +228,7 @@ export async function captureImageFromPDF(pdfBlob: Blob, position: Highlight['po
     const extractedContext = extractedCanvas.getContext('2d');
     if (!extractedContext) return null;
 
-    // 이미지 추출
+    // Extract image
     extractedContext.drawImage(
         canvas,
         startX, startY, width, height,
