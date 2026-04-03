@@ -57,6 +57,9 @@ async function main() {
                 return;
             }
 
+            // Extract user prompt: everything in the block content except the ((uuid)) reference
+            const userPrompt = currentBlock.content.replace(/\(\(.*?\)\)/g, "").trim() || undefined;
+
             const highlight = findHighlightFromEdnByUuid(uuid, edn);
             if (!highlight) {
                 await logseq.UI.showMsg(`Please check whether the highlight uuid is on current line.`, "warning");
@@ -73,7 +76,7 @@ async function main() {
             ///////////////////////////////
             const loadingBlock = await logseq.Editor.insertBlock(currentBlock.uuid, "LOADING.....");
 
-            const chatResponse = await invoke(highlight, pdf, openaiApiKey, llmModelHost, llmModel, vectorStore);
+            const chatResponse = await invoke(highlight, pdf, openaiApiKey, llmModelHost, llmModel, vectorStore, userPrompt);
 
             if (loadingBlock) await logseq.Editor.removeBlock(loadingBlock.uuid);
             if (chatResponse) {

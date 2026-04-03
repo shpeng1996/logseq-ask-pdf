@@ -24,7 +24,9 @@ let vectorStoreCache: VectorStoreCache = {};
 
 async function showVectorStoreDebug(message: string, level: "success" | "warning" | "error" = "warning") {
     console.log(`[storePdfOnVectorStore] ${message}`);
-    // await logseq.UI.showMsg(`[storePdfOnVectorStore] ${message}`, level);
+    if (false) {
+        await logseq.UI.showMsg(`[storePdfOnVectorStore] ${message}`, level);
+    }
 }
 
 function splitIntoBatches<T>(items: T[], batchSize: number) {
@@ -63,7 +65,7 @@ export async function storePdfOnVectorStore(pdf: Blob, openaiApiKey: string, emb
     }
 
     try {
-        console.log("Creating new vector store"); 
+        console.log("Creating new vector store");
         const embeddings = new OpenAIEmbeddings({
             openAIApiKey: openaiApiKey,
             model: embeddingModel,
@@ -106,7 +108,7 @@ export async function storePdfOnVectorStore(pdf: Blob, openaiApiKey: string, emb
     }
 }
 
-export async function invoke(highlight: Highlight, pdf: Blob, openaiApiKey: string, llmModelHost: string | null, llmModel: string, vectorStore: MemoryVectorStore) {
+export async function invoke(highlight: Highlight, pdf: Blob, openaiApiKey: string, llmModelHost: string | null, llmModel: string, vectorStore: MemoryVectorStore, userPrompt?: string) {
     const llm = new ChatOpenAI({
         openAIApiKey: openaiApiKey,
         model: llmModel,
@@ -116,10 +118,21 @@ export async function invoke(highlight: Highlight, pdf: Blob, openaiApiKey: stri
     });
 
     if (!highlight.content.image) {
-        let promptTemplate = ChatPromptTemplate.fromTemplate(
-            (logseq.settings as any)["promptTemplateForText"] ?? logseq.settings?.["promptTemplateForText"] ?? `Context:\n{context}\n---\nExplain following concept and write in markdown format: {input}`
-        );
-        let input = highlight.content.text;
+        let promptTemplate: ChatPromptTemplate;
+        let input: string | undefined;
+
+        if (userPrompt && highlight.content.text) {
+            // User provided a custom prompt alongside the highlight — use the highlight as context for the question
+            promptTemplate = ChatPromptTemplate.fromTemplate(
+                `Context:\n{context}\n---\nHighlighted text: {input}\n---\nBased on the highlighted text and the context above, answer the following question in markdown format: ${userPrompt}`
+            );
+            input = highlight.content.text;
+        } else {
+            promptTemplate = ChatPromptTemplate.fromTemplate(
+                (logseq.settings as any)["promptTemplateForText"] ?? logseq.settings?.["promptTemplateForText"] ?? `Context:\n{context}\n---\nExplain following concept and write in markdown format: {input}`
+            );
+            input = userPrompt || highlight.content.text;
+        }
 
         const combineDocsChain = await createStuffDocumentsChain({
             llm,
@@ -199,7 +212,7 @@ export async function invoke(highlight: Highlight, pdf: Blob, openaiApiKey: stri
 
         try {
             return retrievalChain.invoke({
-                input: imageDescription.content as string,
+                input: userPrompt || (imageDescription.content as string),
             });
         } catch (e) {
             console.log(e);
