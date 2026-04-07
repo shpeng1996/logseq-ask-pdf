@@ -4,6 +4,7 @@ import { Buffer } from 'buffer'
 import { invoke, readOpenAiAPIKey, readEmbeddingModelHost, readEmbeddingModel, readLLMModelHost, readLLMModel, storePdfOnVectorStore } from "./openai";
 import { findPageProperty } from "./page";
 import { findHighlightFromEdnByUuid, findUuidFromAnnotationBlock, findUuidOfCurrentLine, formatPdfDebugInfo, getPdfAndEdnByPdfPath } from "./pdf";
+import { PageEntity } from "@logseq/libs/dist/LSPlugin";
 
 globalThis.Buffer = Buffer
 
@@ -29,12 +30,38 @@ async function main() {
                 await logseq.UI.showMsg("OpenAI API key is not set. Please set it in the plugin settings.", "error")
                 return
             }
+            
+            ///////////////////////////////
+            // parse current block
+            ///////////////////////////////
+            const uuid =
+                findUuidFromAnnotationBlock(currentBlock) ?? findUuidOfCurrentLine(currentBlock.content);
+            if (!uuid) {
+                await logseq.UI.showMsg(`Please check whether the highlight uuid is on current line.`, "warning");
+                return;
+            }
+
+            // Extract user prompt: everything in the block content except the ((uuid)) reference
+            const userPrompt = currentBlock.content.replace(/\(\(.*?\)\)/g, "").trim() || undefined;
 
             ///////////////////////////////
             // find pdf
             ///////////////////////////////
-            const currentPage = await logseq.Editor.getCurrentPage();
-            const pdfPath = findPageProperty(currentPage, "askPdfPath");
+            const block = await logseq.Editor.getBlock(uuid);
+            let pdfPath: string = "";
+
+            if (block?.page) {
+                const pageId =
+                    typeof block.page === "number"
+                        ? block.page
+                        : block.page.id;
+
+                const page = await logseq.Editor.getPage(pageId);
+
+                if (page) {
+                    pdfPath = findPageProperty(page as PageEntity, "filePath");
+                }
+            }
             if (!pdfPath) {
                 await logseq.UI.showMsg(`Before using the plugin, set 'ask-pdf-path' property.`, "warning")
                 return;
@@ -49,17 +76,8 @@ async function main() {
             const { pdf, edn } = pdfInfo;
 
             ///////////////////////////////
-            // parse current block & find highlights
+            // find highlights
             ///////////////////////////////
-            const uuid =
-                findUuidFromAnnotationBlock(currentBlock) ?? findUuidOfCurrentLine(currentBlock.content);
-            if (!uuid) {
-                await logseq.UI.showMsg(`Please check whether the highlight uuid is on current line.`, "warning");
-                return;
-            }
-
-            // Extract user prompt: everything in the block content except the ((uuid)) reference
-            const userPrompt = currentBlock.content.replace(/\(\(.*?\)\)/g, "").trim() || undefined;
 
             const highlight = findHighlightFromEdnByUuid(uuid, edn);
             if (!highlight) {
