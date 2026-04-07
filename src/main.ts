@@ -3,7 +3,7 @@ import settingUI from "./settings";
 import { Buffer } from 'buffer'
 import { invoke, readOpenAiAPIKey, readEmbeddingModelHost, readEmbeddingModel, readLLMModelHost, readLLMModel, storePdfOnVectorStore } from "./openai";
 import { findPageProperty } from "./page";
-import { findHighlightFromEdnByUuid, findUuidOfCurrentLine, formatPdfDebugInfo, getPdfAndEdnByPdfPath } from "./pdf";
+import { findHighlightFromEdnByUuid, findUuidFromAnnotationBlock, findUuidOfCurrentLine, formatPdfDebugInfo, getPdfAndEdnByPdfPath } from "./pdf";
 
 globalThis.Buffer = Buffer
 
@@ -51,7 +51,8 @@ async function main() {
             ///////////////////////////////
             // parse current block & find highlights
             ///////////////////////////////
-            const uuid = findUuidOfCurrentLine(currentBlock.content);
+            const uuid =
+                findUuidFromAnnotationBlock(currentBlock) ?? findUuidOfCurrentLine(currentBlock.content);
             if (!uuid) {
                 await logseq.UI.showMsg(`Please check whether the highlight uuid is on current line.`, "warning");
                 return;

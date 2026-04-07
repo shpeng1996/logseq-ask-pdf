@@ -148,6 +148,17 @@ export function findUuidOfCurrentLine(line: string) {
     return match ? match[1] : null;
 }
 
+/** Prefer highlight id from PDF annotation block properties; else null (caller may fall back to ((uuid)) in content). */
+export function findUuidFromAnnotationBlock(block: { properties?: Record<string, unknown>; uuid?: string }) {
+    const props = block.properties;
+    if (!props) return null;
+    if (props["lsType"] !== "annotation") return null;
+    const id = props["id"];
+    if (typeof id === "string" && id.length > 0) return id;
+    if (typeof block.uuid === "string" && block.uuid.length > 0) return block.uuid;
+    return null;
+}
+
 export function findHighlightFromEdnByUuid(uuid: string, edn: { "highlights": Highlight[] }) {
     const highlights = edn["highlights"];
     for (const highlight of highlights) {
