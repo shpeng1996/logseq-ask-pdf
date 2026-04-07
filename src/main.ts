@@ -80,7 +80,7 @@ async function main() {
             ///////////////////////////////
             const loadingBlock = await logseq.Editor.insertBlock(currentBlock.uuid, "LOADING.....");
 
-            const chatResponse = await invoke(highlight, pdf, openaiApiKey, llmModelHost, llmModel, vectorStore, userPrompt);
+            const chatResponse = await invoke(highlight, pdf, openaiApiKey, llmModelHost, llmModel, vectorStore, userPrompt, currentBlock);
 
             if (loadingBlock) await logseq.Editor.removeBlock(loadingBlock.uuid);
             if (chatResponse) {

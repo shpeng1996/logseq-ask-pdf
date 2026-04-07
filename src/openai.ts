@@ -9,6 +9,8 @@ import { HumanMessage } from "@langchain/core/messages";
 import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
 import { createRetrievalChain } from "langchain/chains/retrieval";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+// import blockEntity from LSPlugin
+import { BlockEntity } from "@logseq/libs/dist/LSPlugin";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
 
@@ -152,7 +154,11 @@ export async function storePdfOnVectorStore(pdf: Blob, openaiApiKey: string, emb
     }
 }
 
-export async function invoke(highlight: Highlight, pdf: Blob, openaiApiKey: string, llmModelHost: string | null, llmModel: string, vectorStore: MemoryVectorStore, userPrompt?: string) {
+export async function invoke(highlight: Highlight, 
+            pdf: Blob, openaiApiKey: string, llmModelHost: string | null, 
+            llmModel: string, vectorStore: MemoryVectorStore, 
+            userPrompt?: string, currentBlock?: BlockEntity) {
+
     const llm = new ChatOpenAI({
         openAIApiKey: openaiApiKey,
         model: llmModel,
@@ -196,7 +202,27 @@ export async function invoke(highlight: Highlight, pdf: Blob, openaiApiKey: stri
             const result = await retrievalChain.invoke({
                 input: input,
             });
-            await showRetrievalContextLog((result as { context?: unknown }).context);
+            // await showRetrievalContextLog((result as { context?: unknown }).context);
+        
+            if (readShowRetrievalDetailLogs()) {
+                const currentBlockId = currentBlock?.uuid;
+                if (currentBlockId && input) {
+                    const contextHeader = "*Ask PDF Retrieval INPUT*";
+                    const contextBlock = await logseq.Editor.insertBlock(currentBlockId, contextHeader);
+                    if (contextBlock) {
+                        // Run the chain first to get the actual context
+                        // const result = await retrievalChain.invoke({ input: input });
+                        const retrievedDocs = (result.context as any[])
+                            ?.map((d: any) => d.pageContent)
+                            .join("\n---\n") ?? "(no context retrieved)";
+                        const fullPrompt = await promptTemplate.format({ context: retrievedDocs, input: input });
+                        
+                        // remove metadata from fullPrompt
+                        const cleanedPrompt = fullPrompt.replace(/^\s*[\w-]+::.*\n?/gm, "");
+                        await logseq.Editor.insertBlock(contextBlock.uuid, cleanedPrompt);
+                    }
+                }
+            }
             return result;
         } catch (e) {
             console.log(e);
