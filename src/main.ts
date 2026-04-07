@@ -69,7 +69,10 @@ async function main() {
             ///////////////////////////////
             // upload pdf to langchain vec db
             ///////////////////////////////
+            
+            const embeddingBlock = await logseq.Editor.insertBlock(currentBlock.uuid, "EMBEDDING.....");
             const vectorStore = await storePdfOnVectorStore(pdf, openaiApiKey, embeddingModelHost, embeddingModel, pdfPath);
+            if (embeddingBlock) await logseq.Editor.removeBlock(embeddingBlock.uuid);
 
             ///////////////////////////////
             // ask to gpt

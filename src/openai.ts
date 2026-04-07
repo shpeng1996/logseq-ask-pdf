@@ -78,8 +78,8 @@ export async function storePdfOnVectorStore(pdf: Blob, openaiApiKey: string, emb
         });
         const docs = await loader.load();
         const splitter = new RecursiveCharacterTextSplitter({
-            chunkSize: 500,
-            chunkOverlap: 200,
+            chunkSize: 600,
+            chunkOverlap: 300,
         });
         const splitDocs = await splitter.splitDocuments(docs);
         await showVectorStoreDebug(`documents split: docs=${splitDocs.length}`, "success");
