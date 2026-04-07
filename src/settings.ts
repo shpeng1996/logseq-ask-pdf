@@ -55,11 +55,11 @@ export default function settingUI() {
             default: "gpt-4o-mini"
         },
         {
-            key: "showRetrievalDetailLogs",
+            key: "enableDetailLogs",
             type: "boolean",
-            title: "Show retrieval detail logs",
+            title: "Show detailed retrieval logs",
             description:
-                "When enabled, shows embedding/indexing progress and retrieved document snippets via Logseq notifications (showMsg).",
+                "When enabled, detailed logs about embedding/indexing progress and retrieved document snippets will be shown as Logseq notifications.",
             default: false,
         },
     ];

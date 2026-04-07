@@ -24,56 +24,17 @@ interface VectorStoreCache {
 // Global cache object declaration
 let vectorStoreCache: VectorStoreCache = {};
 
-function readShowRetrievalDetailLogs(): boolean {
-    return Boolean((logseq.settings as any)?.showRetrievalDetailLogs);
+function readEnableDetailLogs(): boolean {
+    return Boolean((logseq.settings as any)?.EnableDetailLogs);
 }
 
-async function showVectorStoreDebug(message: string, level: "success" | "warning" | "error" = "warning") {
-    console.log(`[storePdfOnVectorStore] ${message}`);
-    if (readShowRetrievalDetailLogs()) {
-        await logseq.UI.showMsg(`[storePdfOnVectorStore] ${message}`, level);
+async function showDebug(message: string, level: "success" | "warning" | "error" = "warning") {
+    console.log(`${message}`);
+    if (readEnableDetailLogs()) {
+        await logseq.UI.showMsg(`${message}`, level);
     }
 }
 
-const RETRIEVAL_LOG_MAX_DOCS = 12;
-const RETRIEVAL_LOG_MAX_CHARS_PER_DOC = 600;
-const RETRIEVAL_LOG_MAX_TOTAL_CHARS = 12000;
-
-function formatRetrievedDocumentsForMsg(context: unknown): string {
-    if (!Array.isArray(context) || context.length === 0) {
-        return `Retrieved documents: ${context === undefined ? "none" : JSON.stringify(context)?.slice(0, 500)}`;
-    }
-    const lines: string[] = [`Retrieved ${context.length} chunk(s):`];
-    let total = lines.join("\n").length;
-    const maxDocs = Math.min(context.length, RETRIEVAL_LOG_MAX_DOCS);
-    for (let i = 0; i < maxDocs; i++) {
-        const doc = context[i] as { pageContent?: string; metadata?: Record<string, unknown> };
-        const meta = doc.metadata && Object.keys(doc.metadata).length > 0
-            ? JSON.stringify(doc.metadata)
-            : "{}";
-        let text = (doc.pageContent ?? "").replace(/\s+/g, " ").trim();
-        if (text.length > RETRIEVAL_LOG_MAX_CHARS_PER_DOC) {
-            text = `${text.slice(0, RETRIEVAL_LOG_MAX_CHARS_PER_DOC)}…`;
-        }
-        const block = `\n---\n[${i + 1}] ${meta}\n${text}`;
-        if (total + block.length > RETRIEVAL_LOG_MAX_TOTAL_CHARS) {
-            lines.push("\n---\n… (truncated)");
-            break;
-        }
-        lines.push(block);
-        total += block.length;
-    }
-    if (context.length > maxDocs) {
-        lines.push(`\n… and ${context.length - maxDocs} more chunk(s) not shown.`);
-    }
-    return lines.join("");
-}
-
-async function showRetrievalContextLog(context: unknown) {
-    if (!readShowRetrievalDetailLogs()) return;
-    const msg = formatRetrievedDocumentsForMsg(context);
-    await logseq.UI.showMsg(msg, "success");
-}
 
 function splitIntoBatches<T>(items: T[], batchSize: number) {
     const batches: T[][] = [];
@@ -81,6 +42,21 @@ function splitIntoBatches<T>(items: T[], batchSize: number) {
         batches.push(items.slice(i, i + batchSize));
     }
     return batches;
+}
+
+function messageContentToString(content: unknown): string {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+        return content
+            .map((part) =>
+                typeof part === "object" && part !== null && "text" in part
+                    ? String((part as { text: string }).text)
+                    : ""
+            )
+            .filter(Boolean)
+            .join("\n");
+    }
+    return String(content ?? "");
 }
 
 export function readOpenAiAPIKey(): string | null {
@@ -128,17 +104,17 @@ export async function storePdfOnVectorStore(pdf: Blob, openaiApiKey: string, emb
             chunkOverlap: 300,
         });
         const splitDocs = await splitter.splitDocuments(docs);
-        await showVectorStoreDebug(`documents split: docs=${splitDocs.length}`, "success");
+        await showDebug(`[storePdfOnVectorStore] documents split: docs=${splitDocs.length}`, "success");
 
-        await showVectorStoreDebug("building in-memory vector store");
+        await showDebug("[storePdfOnVectorStore] building in-memory vector store");
         const vectorStore = new MemoryVectorStore(embeddings);
         const batches = splitIntoBatches(splitDocs, 10);
 
         for (let i = 0; i < batches.length; i++) {
             const batch = batches[i];
-            await showVectorStoreDebug(`embedding batch ${i + 1}/${batches.length}: docs=${batch.length}`);
+            await showDebug(`[storePdfOnVectorStore] embedding batch ${i + 1}/${batches.length}: docs=${batch.length}`);
             await vectorStore.addDocuments(batch);
-            await showVectorStoreDebug(`embedded batch ${i + 1}/${batches.length}`, "success");
+            await showDebug(`[storePdfOnVectorStore] embedded batch ${i + 1}/${batches.length}`, "success");
         }
 
         if (!vectorStoreCache[pdfPath]) {
@@ -149,7 +125,7 @@ export async function storePdfOnVectorStore(pdf: Blob, openaiApiKey: string, emb
         return vectorStore;
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await showVectorStoreDebug(`failed: ${message}`, "error");
+        await showDebug(`[storePdfOnVectorStore] failed: ${message}`, "error");
         throw error;
     }
 }
@@ -204,7 +180,7 @@ export async function invoke(highlight: Highlight,
             });
             // await showRetrievalContextLog((result as { context?: unknown }).context);
         
-            if (readShowRetrievalDetailLogs()) {
+            if (readEnableDetailLogs()) {
                 const currentBlockId = currentBlock?.uuid;
                 if (currentBlockId && input) {
                     const contextHeader = "*Ask PDF Retrieval INPUT*";
@@ -216,7 +192,7 @@ export async function invoke(highlight: Highlight,
                             ?.map((d: any) => d.pageContent)
                             .join("\n---\n") ?? "(no context retrieved)";
                         const fullPrompt = await promptTemplate.format({ context: retrievedDocs, input: input });
-                        
+
                         // remove metadata from fullPrompt
                         const cleanedPrompt = fullPrompt.replace(/^\s*[\w-]+::.*\n?/gm, "");
                         await logseq.Editor.insertBlock(contextBlock.uuid, cleanedPrompt);
@@ -245,7 +221,7 @@ export async function invoke(highlight: Highlight,
             content: [
                 {
                     "type": "text",
-                    "text": "Please describe the image below:",
+                    "text": "Please briefly describe the image below:",
                 },
                 {
                     "type": "image_url",
@@ -255,38 +231,63 @@ export async function invoke(highlight: Highlight,
                 },
             ]
         });
-
+        
         // ask the model to describe the image
-        const llm = new ChatOpenAI({
-            openAIApiKey: openaiApiKey,
-            model: llmModel,
-        });
-
         const imageDescription = await llm.invoke([imageDescriptionMessage]);
+        
         console.log(`Image description: ${imageDescription.content}`);
+        const describedImage = (imageDescription.content as string) ?? "";
+        if (!describedImage.trim()) {
+            logseq.UI.showMsg("Empty image description from model", "error");
+            return null;
+        }
 
-        // query the vector store with the image description
-        const promptTemplate = ChatPromptTemplate.fromTemplate(
-            (logseq.settings as any)["promptTemplateForImage"] ?? logseq.settings?.["promptTemplateForImage"] ?? `Context:\n{context}\n---\nExplain following described image and write in markdown format: {input}`
-        );
-
-        const combineDocsChain = await createStuffDocumentsChain({
-            llm,
-            prompt: promptTemplate,
-        });
+        // query the vector store with the image description ({input} is always the described region, like highlighted text in text mode)
+        let promptTemplate: ChatPromptTemplate;
+        if (userPrompt) {
+            promptTemplate = ChatPromptTemplate.fromTemplate(
+                `Context:\n{context}\n---\nDescribed image region: {input}\n---\nBased on the described image and the context above, answer the following question in markdown format: ${userPrompt}`
+            );
+        } else {
+            promptTemplate = ChatPromptTemplate.fromTemplate(
+                (logseq.settings as any)["promptTemplateForImage"] ?? logseq.settings?.["promptTemplateForImage"] ?? `Context:\n{context}\n---\nExplain following described image and write in markdown format: {input}`
+            );
+        }
 
         const retriever = vectorStore.asRetriever();
 
-        const retrievalChain = await createRetrievalChain({
-            combineDocsChain,
-            retriever,
-        });
-
         try {
-            const result = await retrievalChain.invoke({
-                input: userPrompt || (imageDescription.content as string),
+            const contextDocs = await retriever.invoke(describedImage);
+            const retrievedDocs = contextDocs.map((d) => d.pageContent).join("\n---\n");
+
+            const basePrompt = await promptTemplate.format({ context: retrievedDocs, input: describedImage });
+            const instructionText = `${basePrompt}\n\nThe next part is the original image of the highlighted region from the PDF. Use it together with the context and your instructions when answering.`;
+
+            const finalMessage = new HumanMessage({
+                content: [
+                    { type: "text", text: instructionText },
+                    { type: "image_url", image_url: { url: image } },
+                ],
             });
-            await showRetrievalContextLog((result as { context?: unknown }).context);
+
+            const answerMessage = await llm.invoke([finalMessage]);
+            const result = {
+                answer: messageContentToString(answerMessage.content),
+                context: contextDocs,
+            };
+
+            if (readEnableDetailLogs()) {
+                const currentBlockId = currentBlock?.uuid;
+                if (currentBlockId && describedImage) {
+                    const contextHeader = "*Ask PDF Retrieval INPUT*";
+                    const contextBlock = await logseq.Editor.insertBlock(currentBlockId, contextHeader);
+                    if (contextBlock) {
+                        const fullPrompt = basePrompt;
+                        const cleanedPrompt = fullPrompt.replace(/^\s*[\w-]+::.*\n?/gm, "");
+                        await logseq.Editor.insertBlock(contextBlock.uuid, cleanedPrompt);
+                    }
+                }
+            }
             return result;
         } catch (e) {
             console.log(e);
