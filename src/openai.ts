@@ -12,7 +12,7 @@ import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.mjs`;
 
-// 캐시를 위한 인터페이스 정의
+// Interface definition for caching
 interface VectorStoreCache {
     [key: string]: {
         [embeddingModel: string]: MemoryVectorStore;
