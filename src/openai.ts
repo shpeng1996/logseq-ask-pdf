@@ -22,11 +22,55 @@ interface VectorStoreCache {
 // Global cache object declaration
 let vectorStoreCache: VectorStoreCache = {};
 
+function readShowRetrievalDetailLogs(): boolean {
+    return Boolean((logseq.settings as any)?.showRetrievalDetailLogs);
+}
+
 async function showVectorStoreDebug(message: string, level: "success" | "warning" | "error" = "warning") {
     console.log(`[storePdfOnVectorStore] ${message}`);
-    if (false) {
+    if (readShowRetrievalDetailLogs()) {
         await logseq.UI.showMsg(`[storePdfOnVectorStore] ${message}`, level);
     }
+}
+
+const RETRIEVAL_LOG_MAX_DOCS = 12;
+const RETRIEVAL_LOG_MAX_CHARS_PER_DOC = 600;
+const RETRIEVAL_LOG_MAX_TOTAL_CHARS = 12000;
+
+function formatRetrievedDocumentsForMsg(context: unknown): string {
+    if (!Array.isArray(context) || context.length === 0) {
+        return `Retrieved documents: ${context === undefined ? "none" : JSON.stringify(context)?.slice(0, 500)}`;
+    }
+    const lines: string[] = [`Retrieved ${context.length} chunk(s):`];
+    let total = lines.join("\n").length;
+    const maxDocs = Math.min(context.length, RETRIEVAL_LOG_MAX_DOCS);
+    for (let i = 0; i < maxDocs; i++) {
+        const doc = context[i] as { pageContent?: string; metadata?: Record<string, unknown> };
+        const meta = doc.metadata && Object.keys(doc.metadata).length > 0
+            ? JSON.stringify(doc.metadata)
+            : "{}";
+        let text = (doc.pageContent ?? "").replace(/\s+/g, " ").trim();
+        if (text.length > RETRIEVAL_LOG_MAX_CHARS_PER_DOC) {
+            text = `${text.slice(0, RETRIEVAL_LOG_MAX_CHARS_PER_DOC)}…`;
+        }
+        const block = `\n---\n[${i + 1}] ${meta}\n${text}`;
+        if (total + block.length > RETRIEVAL_LOG_MAX_TOTAL_CHARS) {
+            lines.push("\n---\n… (truncated)");
+            break;
+        }
+        lines.push(block);
+        total += block.length;
+    }
+    if (context.length > maxDocs) {
+        lines.push(`\n… and ${context.length - maxDocs} more chunk(s) not shown.`);
+    }
+    return lines.join("");
+}
+
+async function showRetrievalContextLog(context: unknown) {
+    if (!readShowRetrievalDetailLogs()) return;
+    const msg = formatRetrievedDocumentsForMsg(context);
+    await logseq.UI.showMsg(msg, "success");
 }
 
 function splitIntoBatches<T>(items: T[], batchSize: number) {
@@ -149,9 +193,11 @@ export async function invoke(highlight: Highlight, pdf: Blob, openaiApiKey: stri
         }
 
         try {
-            return retrievalChain.invoke({
+            const result = await retrievalChain.invoke({
                 input: input,
             });
+            await showRetrievalContextLog((result as { context?: unknown }).context);
+            return result;
         } catch (e) {
             console.log(e);
             logseq.UI.showMsg(e as any, "error");
@@ -211,9 +257,11 @@ export async function invoke(highlight: Highlight, pdf: Blob, openaiApiKey: stri
         });
 
         try {
-            return retrievalChain.invoke({
+            const result = await retrievalChain.invoke({
                 input: userPrompt || (imageDescription.content as string),
             });
+            await showRetrievalContextLog((result as { context?: unknown }).context);
+            return result;
         } catch (e) {
             console.log(e);
             logseq.UI.showMsg(e as any, "error");

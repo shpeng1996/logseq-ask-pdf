@@ -53,7 +53,15 @@ export default function settingUI() {
             title: "LLM Model",
             description: "Name of the LLM model to use",
             default: "gpt-4o-mini"
-        }
+        },
+        {
+            key: "showRetrievalDetailLogs",
+            type: "boolean",
+            title: "Show retrieval detail logs",
+            description:
+                "When enabled, shows embedding/indexing progress and retrieved document snippets via Logseq notifications (showMsg).",
+            default: false,
+        },
     ];
     logseq.useSettingsSchema(settings);
 }
