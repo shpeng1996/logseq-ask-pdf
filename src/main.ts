@@ -127,9 +127,27 @@ async function main() {
                         await logseq.Editor.insertBlock(askPdfBlock.uuid, "#+BEGIN_NOTE\n" + thinkingContent + "\n#+END_NOTE");
                     }
                     // await logseq.Editor.insertBlock(askPdfBlock.uuid, answerText);
+                    const isTableLine = (line: string): boolean => /^\s*\|.*\|\s*$/.test(line);
+
                     let lastParentBlock = askPdfBlock;
-                    for (const line of lines) {
-                        if (line.trim() === "") continue;
+                    let i = 0;
+                    while (i < lines.length) {
+                        const line = lines[i];
+                        if (line.trim() === "") { i++; continue; }
+
+                        // markdown table → keep all consecutive `| ... |` rows in a single block so Logseq renders it
+                        if (isTableLine(line)) {
+                            const tableLines: string[] = [];
+                            while (i < lines.length && isTableLine(lines[i])) {
+                                tableLines.push(lines[i]);
+                                i++;
+                            }
+                            const content = tableLines.length >= 2 ? tableLines.join("\n") : tableLines[0];
+                            const inserted = await logseq.Editor.insertBlock(askPdfBlock.uuid, content);
+                            if (inserted) lastParentBlock = inserted;
+                            continue;
+                        }
+
                         const listMatch = line.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/);
                         if (listMatch) {
                             // list item → insert as child of the last non-list parent block
@@ -139,6 +157,7 @@ async function main() {
                             const inserted = await logseq.Editor.insertBlock(askPdfBlock.uuid, line);
                             if (inserted) lastParentBlock = inserted;
                         }
+                        i++;
                     }
                 }
             } else {
