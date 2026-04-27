@@ -135,6 +135,20 @@ async function main() {
                         const line = lines[i];
                         if (line.trim() === "") { i++; continue; }
 
+                        // markdown code block → collect until closing fence, insert as one block
+                        if (line.trim().startsWith("```")) {
+                            const codeLines: string[] = [line];
+                            i++;
+                            while (i < lines.length) {
+                                codeLines.push(lines[i]);
+                                if (lines[i].trim() === "```") { i++; break; }
+                                i++;
+                            }
+                            const inserted = await logseq.Editor.insertBlock(askPdfBlock.uuid, codeLines.join("\n"));
+                            if (inserted) lastParentBlock = inserted;
+                            continue;
+                        }
+
                         // markdown table → keep all consecutive `| ... |` rows in a single block so Logseq renders it
                         if (isTableLine(line)) {
                             const tableLines: string[] = [];
